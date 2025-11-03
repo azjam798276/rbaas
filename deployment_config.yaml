@@ -1,0 +1,457 @@
+# Nexus Sandbox Framework - Deployment Configuration
+# This file drives the entire infrastructure provisioning and deployment
+
+# =============================================================================
+# PROXMOX CONFIGURATION
+# =============================================================================
+proxmox:
+  # Proxmox host connection details
+  endpoint: "https://10.1.0.101:8006"
+  node: "7940hx"  # Your Proxmox node name
+  verify_ssl: false  # Set to true in production with valid certs
+  
+  # API credentials (will be read from environment variables)
+  # PM_API_TOKEN_ID and PM_API_TOKEN_SECRET
+  
+  # Resource pool for organization
+  pool: "nexus-sandbox"
+  
+  # Storage pools
+  storage:
+    vm_disk: "local-zfs"  # For VM disks
+    iso: "local"          # For ISO/cloud-init
+    backup: "backup-pool" # For backups
+
+# =============================================================================
+# NETWORK CONFIGURATION
+# =============================================================================
+network:
+  # CIDR for K3s cluster
+  cluster_cidr: "192.168.100.0/24"
+  
+  # Gateway
+  gateway: "192.168.100.1"
+  
+  # DNS servers
+  dns_servers:
+    - "1.1.1.1"
+    - "8.8.8.8"
+  
+  # IP allocations
+  control_plane_ips:
+    - "192.168.100.10"
+    - "192.168.100.11"
+    - "192.168.100.12"
+  
+  worker_ips:
+    - "192.168.100.20"
+    - "192.168.100.21"
+    - "192.168.100.22"
+  
+  gpu_worker_ips:
+    - "192.168.100.30"
+    - "192.168.100.31"
+  
+  # Load balancer VIP for HA
+  loadbalancer_vip: "192.168.100.100"
+
+# =============================================================================
+# VM SPECIFICATIONS
+# =============================================================================
+vms:
+  # Cloud-init template (must be created beforehand)
+  template: "ubuntu-2204-cloudinit-template"
+  
+  # SSH key for access (will be read from ~/.ssh/id_rsa.pub)
+  ssh_key_file: "~/.ssh/id_rsa.pub"
+  
+  # Control plane nodes
+  control_plane:
+    count: 3
+    vcpus: 4
+    memory: 8192  # MB
+    disk_size: 50  # GB
+    # Enable nested virtualization for Kata
+    cpu_type: "host"
+  
+  # Standard worker nodes
+  workers:
+    count: 3
+    vcpus: 8
+    memory: 16384  # MB
+    disk_size: 100  # GB
+    cpu_type: "host"
+  
+  # GPU-enabled worker nodes
+  gpu_workers:
+    count: 2
+    vcpus: 8
+    memory: 32768  # MB
+    disk_size: 100  # GB
+    cpu_type: "host"
+    # GPU passthrough configuration
+    gpu_passthrough:
+      enabled: true
+      # PCI addresses of GPUs (find with: lspci | grep -i nvidia)
+      devices:
+        - host_pci: "02:00.0"  # GPU
+        - host_pci: "02:00.1"  # GPU Audio
+      # Disable emulated VGA
+      disable_vga: true
+
+# =============================================================================
+# K3S CONFIGURATION
+# =============================================================================
+k3s:
+  version: "v1.28.5+k3s1"
+  
+  # Server (control plane) configuration
+  server:
+    # Embedded etcd for HA
+    cluster_init: true
+    
+    # Disable built-in components we'll replace
+    disable:
+      - traefik      # Use custom ingress
+      - servicelb    # Use MetalLB
+    
+    # Additional server arguments
+    extra_args:
+      - "--write-kubeconfig-mode=644"
+      - "--disable-cloud-controller"
+      - "--kube-apiserver-arg=feature-gates=MixedProtocolLBService=true"
+  
+  # Agent (worker) configuration
+  agent:
+    # Node labels for scheduling
+    labels:
+      standard_workers:
+        - "workload-type=general"
+        - "sandbox-type=docker,wasm"
+      
+      gpu_workers:
+        - "workload-type=gpu"
+        - "sandbox-type=kata-gpu"
+        - "nvidia.com/gpu=true"
+    
+    # Node taints for GPU workers
+    taints:
+      gpu_workers:
+        - "nvidia.com/gpu=true:NoSchedule"
+
+# =============================================================================
+# SECURE RUNTIMES CONFIGURATION
+# =============================================================================
+runtimes:
+  kata:
+    enabled: true
+    version: "3.2.0"
+    hypervisor: "qemu"  # or "firecracker" for even faster boot
+    
+    # Kata configuration overrides
+    config:
+      # Use QEMU for better hardware support
+      hypervisor.qemu.path: "/usr/bin/qemu-system-x86_64"
+      
+      # Enable GPU passthrough
+      hypervisor.qemu.vfio_mode: "vfio"
+      
+      # Resource limits
+      hypervisor.qemu.default_vcpus: 2
+      hypervisor.qemu.default_memory: 2048
+  
+  gvisor:
+    enabled: true
+    version: "latest"
+    platform: "ptrace"  # or "kvm" for better performance
+
+# =============================================================================
+# NVIDIA GPU OPERATOR
+# =============================================================================
+gpu_operator:
+  enabled: true
+  namespace: "nvidia-gpu-operator"
+  
+  # Helm chart configuration
+  chart:
+    repo: "https://helm.ngc.nvidia.com/nvidia"
+    name: "gpu-operator"
+    version: "v23.9.1"
+  
+  # Operator configuration for Kata
+  values:
+    operator:
+      defaultRuntime: "kata"
+    
+    sandbox:
+      enabled: true
+    
+    driver:
+      enabled: false  # Assuming driver pre-installed on host
+    
+    toolkit:
+      enabled: true
+    
+    devicePlugin:
+      enabled: true
+
+# =============================================================================
+# NEXUS FRAMEWORK CONFIGURATION
+# =============================================================================
+nexus:
+  namespace: "nexus-system"
+  
+  # Container registry for custom images
+  registry: "ghcr.io/your-org"
+  
+  # Components
+  components:
+    sandbox_manager:
+      replicas: 3
+      resources:
+        requests:
+          cpu: "1"
+          memory: "2Gi"
+        limits:
+          cpu: "2"
+          memory: "4Gi"
+    
+    orchestrator:
+      replicas: 3
+      resources:
+        requests:
+          cpu: "2"
+          memory: "4Gi"
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+    
+    api_gateway:
+      replicas: 3
+      resources:
+        requests:
+          cpu: "1"
+          memory: "2Gi"
+        limits:
+          cpu: "2"
+          memory: "4Gi"
+      
+      # Ingress configuration
+      ingress:
+        enabled: true
+        hostname: "nexus-api.local"
+        tls: true
+
+# =============================================================================
+# RBAAS CONFIGURATION
+# =============================================================================
+rbaas:
+  namespace: "nexus-system"
+  
+  # KasmVNC image registry
+  kasmvnc:
+    registry: "docker.io/kasmweb"
+    images:
+      chrome: "kasmweb/chrome:1.16.0"
+      firefox: "kasmweb/firefox:1.16.0"
+      edge: "kasmweb/edge:1.16.0"
+  
+  # Operator configuration
+  operator:
+    replicas: 2
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "1"
+        memory: "2Gi"
+  
+  # FastAPI control plane
+  control_plane:
+    replicas: 3
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+    
+    ingress:
+      enabled: true
+      hostname: "rbaas.local"
+      tls: true
+
+# =============================================================================
+# OBSERVABILITY STACK
+# =============================================================================
+observability:
+  namespace: "monitoring"
+  
+  # Prometheus
+  prometheus:
+    enabled: true
+    retention: "30d"
+    storage_size: "100Gi"
+    replicas: 2
+    
+    # Resource requests
+    resources:
+      requests:
+        cpu: "2"
+        memory: "8Gi"
+      limits:
+        cpu: "4"
+        memory: "16Gi"
+  
+  # Grafana
+  grafana:
+    enabled: true
+    replicas: 2
+    
+    # Admin credentials (will be generated)
+    admin_user: "admin"
+    
+    # Persistence
+    storage_size: "10Gi"
+    
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "1"
+        memory: "2Gi"
+  
+  # Jaeger (distributed tracing)
+  jaeger:
+    enabled: true
+    strategy: "production"  # or "all-in-one" for dev
+    
+    storage:
+      type: "elasticsearch"
+      elasticsearch:
+        nodes: 3
+        storage_size: "50Gi"
+    
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+  
+  # Loki (log aggregation)
+  loki:
+    enabled: true
+    replicas: 3
+    retention: "30d"
+    storage_size: "100Gi"
+    
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+
+# =============================================================================
+# BACKUP AND DISASTER RECOVERY
+# =============================================================================
+backup:
+  enabled: true
+  
+  # Backup schedule (cron format)
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  
+  # Retention policy
+  retention:
+    daily: 7
+    weekly: 4
+    monthly: 6
+  
+  # Backup targets
+  targets:
+    - etcd
+    - persistent_volumes
+    - custom_resources
+  
+  # Storage location
+  storage:
+    type: "s3"
+    bucket: "nexus-backups"
+    region: "us-east-1"
+
+# =============================================================================
+# MULTI-TENANCY
+# =============================================================================
+tenancy:
+  # Default resource quotas per tenant
+  default_quota:
+    pods: 50
+    requests:
+      cpu: "20"
+      memory: "40Gi"
+    limits:
+      cpu: "40"
+      memory: "80Gi"
+    persistentvolumeclaims: 10
+    storage: "100Gi"
+  
+  # Network policies
+  network_isolation: true
+  
+  # RBAC templates
+  rbac:
+    admin_role: true
+    developer_role: true
+    viewer_role: true
+
+# =============================================================================
+# SECURITY SETTINGS
+# =============================================================================
+security:
+  # Pod security standards
+  pod_security:
+    enforce: "restricted"
+    audit: "restricted"
+    warn: "restricted"
+  
+  # Network policies
+  network_policies:
+    enabled: true
+    default_deny_ingress: true
+    default_deny_egress: false
+  
+  # Secret encryption at rest
+  secrets_encryption: true
+  
+  # Audit logging
+  audit:
+    enabled: true
+    log_level: "RequestResponse"
+    retention: "90d"
+  
+  # Image scanning
+  image_scanning:
+    enabled: true
+    policy: "high"  # Block images with high/critical vulnerabilities
+
+# =============================================================================
+# DEVELOPMENT/TESTING OPTIONS
+# =============================================================================
+development:
+  # Skip certain phases for faster iteration
+  skip_phases: []
+  
+  # Enable debug logging
+  debug: true
+  
+  # Reduced resource requirements
+  reduced_resources: false
+  
+  # Single-node cluster for testing
+  single_node: false
