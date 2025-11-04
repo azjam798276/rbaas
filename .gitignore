@@ -6,3 +6,8 @@
 
 # Python cache files
 __pycache__/
+
+in-progress.md
+
+# GPU hookscript temp config
+/tmp/gpu-config.env

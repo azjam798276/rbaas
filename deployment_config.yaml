@@ -92,6 +92,7 @@ vms:
     # GPU passthrough configuration
     gpu_passthrough:
       enabled: true
+      use_hookscript: true
       # PCI addresses of GPUs (find with: lspci | grep -i nvidia)
       devices:
         - host_pci: "02:00.0"  # GPU
