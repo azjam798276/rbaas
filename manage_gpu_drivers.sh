@@ -12,6 +12,7 @@ set -e
 # --- Configuration ---
 NOUVEAU_BLACKLIST_FILE="/etc/modprobe.d/blacklist-nouveau.conf"
 VFIO_MODULE_FILE="/etc/modules-load.d/vfio.conf"
+VFIO_PCI_OPTIONS_FILE="/etc/modprobe.d/vfio.conf"
 
 # --- Functions ---
 
@@ -31,6 +32,10 @@ enable_vfio() {
     echo "vfio_virqfd" >> "$VFIO_MODULE_FILE"
     echo "VFIO modules enabled."
 
+    # Specify devices for vfio-pci
+    echo "options vfio-pci ids=10de:2484,10de:228b" > "$VFIO_PCI_OPTIONS_FILE"
+    echo "VFIO PCI options configured."
+
     # Update initramfs
     echo "Updating initramfs..."
     update-initramfs -u -k all
@@ -45,6 +50,7 @@ disable_vfio() {
     # Remove blacklist and module files
     rm -f "$NOUVEAU_BLACKLIST_FILE"
     rm -f "$VFIO_MODULE_FILE"
+    rm -f "$VFIO_PCI_OPTIONS_FILE"
     echo "Removed nouveau blacklist and vfio module files."
 
     # Update initramfs

@@ -1,2 +1,4 @@
 2025-11-03 13:01:25,833 - proxmox-mcp.proxmox - INFO - Connecting to Proxmox host: 192.168.1.198
 2025-11-03 13:01:30,889 - proxmox-mcp.proxmox - ERROR - Failed to connect to Proxmox: HTTPSConnectionPool(host='192.168.1.198', port=8006): Max retries exceeded with url: /api2/json/version (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x7f003fc59710>, 'Connection to 192.168.1.198 timed out. (connect timeout=5)'))
+2025-11-04 08:31:36,964 - proxmox-mcp.proxmox - INFO - Connecting to Proxmox host: 192.168.1.198
+2025-11-04 08:31:42,092 - proxmox-mcp.proxmox - ERROR - Failed to connect to Proxmox: HTTPSConnectionPool(host='192.168.1.198', port=8006): Max retries exceeded with url: /api2/json/version (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x7ffa00457c50>, 'Connection to 192.168.1.198 timed out. (connect timeout=5)'))

@@ -1,0 +1,55 @@
+#!/bin/bash
+
+# This script performs preflight checks for the Nexus Sandbox Framework deployment.
+
+set -e
+
+# Load configuration from deployment_config.yaml
+# Note: In a real scenario, you might parse YAML more robustly in Python
+# and pass values as environment variables or arguments to shell scripts.
+# For simplicity in this example, we'll assume direct access or simple parsing.
+
+# Read Proxmox configuration from deployment_config.yaml
+PROXMOX_ENDPOINT=$(grep "endpoint:" ../deployment_config.yaml | awk '{print $2}' | tr -d '"')
+PROXMOX_NODE=$(grep "node:" ../deployment_config.yaml | awk '{print $2}' | tr -d '"')
+
+# API credentials are expected to be in environment variables
+if [ -z "$PM_API_TOKEN_ID" ] || [ -z "$PM_API_TOKEN_SECRET" ]; then
+    echo "Error: PM_API_TOKEN_ID and PM_API_TOKEN_SECRET environment variables must be set."
+    exit 1
+fi
+
+PROXMOX_HOST=$(echo $PROXMOX_ENDPOINT | sed -e 's/https:\/\///' -e 's/:8006//')
+
+echo "--- Running Preflight Checks ---"
+
+# 1. Check Proxmox Host Connectivity (SSH)
+echo "Checking Proxmox host SSH connectivity to $PROXMOX_HOST..."
+if ssh -o BatchMode=yes -o ConnectTimeout=5 rocm@$PROXMOX_HOST exit; then
+    echo "Proxmox host $PROXMOX_HOST is reachable via SSH."
+else
+    echo "Error: Proxmox host $PROXMOX_HOST is not reachable via SSH."
+    exit 1
+fi
+
+# 2. Check Proxmox API Connectivity and Token Validity
+echo "Checking Proxmox API connectivity and token validity..."
+# Use pveum auth check to validate the token
+# We need to pass the token ID and secret as environment variables for pveum
+if ssh rocm@$PROXMOX_HOST "bash -c 'export PVE_API_TOKEN=\"$PM_API_TOKEN_ID\" PVE_API_SECRET=\"$PM_API_TOKEN_SECRET\"; /usr/sbin/pveum user list'"; then
+    echo "Proxmox API is reachable and token is valid."
+else
+    echo "Error: Proxmox API is not reachable or token is invalid."
+    exit 1
+fi
+
+# 3. Check Proxmox Node Name
+echo "Verifying Proxmox node name '$PROXMOX_NODE'..."
+if ssh rocm@$PROXMOX_HOST "pveversion -o | grep -q '$PROXMOX_NODE'"; then
+    echo "Proxmox node '$PROXMOX_NODE' found."
+else
+    echo "Error: Proxmox node '$PROXMOX_NODE' not found or does not match."
+    exit 1
+fi
+
+echo "--- Preflight Checks Complete ---"

@@ -18,8 +18,8 @@ proxmox:
   
   # Storage pools
   storage:
-    vm_disk: "local-zfs"  # For VM disks
-    iso: "local"          # For ISO/cloud-init
+    vm_disk: "LVM"  # For VM disks
+    iso: "local"
     backup: "backup-pool" # For backups
 
 # =============================================================================
